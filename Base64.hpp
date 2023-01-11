@@ -5,7 +5,7 @@
 #define DEFAULT_BASECODE "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"//MIME Base64
 #define DEFAULT_FULLCODE '='//MIME Base64
 
-#define INIT_THROW true//抛出初始化异常
+#define INIT_THROW false//抛出初始化异常
 
 
 #if INIT_THROW
@@ -39,6 +39,21 @@ public:
 	typedef void *PVOID;
 	typedef const void *PCVOID;
 	typedef bool BOOL;
+
+	enum class ErrorCode
+	{
+		CLASS_NO_ERROR = 0,//无错误
+		NULL_BASE_CODE,//密码串为空
+		BASE_CODE_REPEAT_CHAR,//密码串中出现重复字符
+		FILL_CODE_IN_BASE_CODE,//密码串中出现填充字符
+		NULL_DATA_POINTER,//数据指针为空
+		NULL_CODE_POINTER,//字符指针为空
+		TARGET_TOO_SMALL,//加解密目标不足以容纳结果
+		NOT_FOUR_MULTIPLE,//待解密串长度不是4的倍数
+		FIND_UNKNOW_CHAR,//待解密串中出现未知字符
+
+		UNKNOW_ERROR,//未知错误
+	};
 protected:
 #define BASECODE_COUNT ((ULONG)(64))//BASE64
 #define BASECODEAP_COUNT (((ULONG)((UCHAR)(-1)))+1)//UCHAR_MAX+1
@@ -47,7 +62,7 @@ protected:
 	UCHAR ucBaseCode[BASECODE_COUNT + sizeof('\0')];//加密字符集 Use:[0]~[64] Full:[64]=0 Text:[0]~[63]
 	UCHAR ucBaseCodeMap[BASECODEAP_COUNT];//加密字符集映射：通过加密字符获得该字符在字符集中的位置（映射集）
 
-	mutable ULONG ulLastError;//类的最后一个错误码
+	mutable ErrorCode ecLastError;//类的最后一个错误码
 	mutable BOOL bAvailable;//类是否可用（如果ucBaseCode内数据不正确、映射不成功则该值为false，类不可用，否则可用），用于保证加密数据不因加密串问题而受到损坏
 
 	//字符集映射函数
@@ -58,43 +73,33 @@ public:
 	Base64(Base64 &&) = default;
 	~Base64(VOID) = default;
 
-	BOOL SetBaseCode(PCUCHAR pcucBaseCode) noexcept;//设置加密字符串
-	PCUCHAR GetBaseCode(VOID) const noexcept;//获取加密字符串
+	BOOL SetBaseCode(PCUCHAR pBaseCode) noexcept;//设置密码串
+	PCUCHAR GetBaseCode(VOID) const noexcept;//获密码串
 
-	BOOL SetFullCode(UCHAR cucFullCode) noexcept;//设置填充字符
+	BOOL SetFullCode(UCHAR cFullCode) noexcept;//设置填充字符
 	UCHAR GetFullCode(VOID) const noexcept;//获取填充字符
 
 	ULONGLONG GetEnCodeSize(PCVOID pData, ULONGLONG ullDataSize) const noexcept;//获取加密后字符串长度
-	BOOL EnCode(PCVOID pData, ULONGLONG ullDataSize, PUCHAR pCode, ULONGLONG ullCodeSize) noexcept;//加密指定内存的指定字节数到指定字符串
+	BOOL EnCode(PCVOID pData, ULONGLONG ullDataSize, PUCHAR pCode, ULONGLONG ullCodeSize) const noexcept;//加密指定内存的指定字节数到指定字符串
 
 	ULONGLONG GetDeCodeSize(PCUCHAR pCode, ULONGLONG ullCodeSize) const noexcept;//获取解密后数据字节长度
-	BOOL DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, ULONGLONG ullDataSize) noexcept;//解密指定字符串到指定内存的指定字节数
+	BOOL DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, ULONGLONG ullDataSize) const noexcept;//解密指定字符串到指定内存的指定字节数
 
-	VOID SetLastError(ULONG ulErrorCode) noexcept;//设置最后一个错误码
-	ULONG GetLastError(VOID) const noexcept;//获取最后一个错误码
-	PCCHAR GetErrorReason(ULONG ulErrorCode) const noexcept;//从错误码获得错误原因
-
+	VOID SetLastError(ErrorCode ecErrorCode) const noexcept;//设置最后一个错误码
+	ErrorCode GetLastError(VOID) const noexcept;//获取最后一个错误码
+	PCCHAR GetErrorReason(ErrorCode ecErrorCode) const noexcept;//从错误码获得错误原因
 private:
-	enum enErrorCode
-	{
-		NO_ERROR = 0,//无错误
-		CIPHER_REPEATING_CHAR,//加密串中出现重复字符
-		FILL_CODE_IN_CIPHER,//加密串中出现填充字符
-		NULL_DATA_POINTER,//数据指针为空
-		NULL_CODE_POINTER,//字符指针为空
-		TARGET_TOO_SMALL,//加解密目标不足以容纳结果
-
-		UNKNOW_ERROR,//未知错误
-	};
-
-	static inline Base64::PCCHAR pErrorReason[UNKNOW_ERROR + 1] =
+	static inline Base64::PCCHAR pErrorReason[(ULONG)ErrorCode::UNKNOW_ERROR + 1] = 
 	{
 		"无错误",
-		"加密串中出现重复字符",
-		"加密串中出现填充字符",
+		"密码串为空",
+		"密码串中出现重复字符",
+		"密码串中出现填充字符",
 		"数据指针为空",
 		"字符指针为空",
 		"目标内存太小",
+		"待解密串长度不是4的倍数",
+		"待解密串中出现未知字符",
 
 		"未知错误",
 	};
@@ -122,8 +127,15 @@ Base64::BOOL Base64::MapTheBaseCode(VOID) noexcept
 }
 
 Base64::Base64(PCUCHAR _ucBaseCode, UCHAR _ucFullCode) :
-	ucFullCode(_ucFullCode), ulLastError(NO_ERROR), bAvailable(false)//设置该类为不可用状态
+	ucFullCode(_ucFullCode), ecLastError(ErrorCode::CLASS_NO_ERROR), bAvailable(false)//设置该类为不可用状态
 {
+	if (_ucBaseCode == NULL)
+	{
+		SetLastError(ErrorCode::NULL_BASE_CODE);
+		THROW_ERROR(GetErrorReason(GetLastError()));
+		return;
+	}
+
 	//拷贝输入字符串
 	memcpy(ucBaseCode, _ucBaseCode, BASECODE_COUNT);
 	ucBaseCode[64] = '\0';//安全起见给字符串末尾赋值为0
@@ -131,16 +143,16 @@ Base64::Base64(PCUCHAR _ucBaseCode, UCHAR _ucFullCode) :
 	//检查填充字符是否位于加密串中
 	if (strchr((PCCHAR)ucBaseCode, ucFullCode) != NULL)
 	{
-		SetLastError(FILL_CODE_IN_CIPHER);
-		THROW_ERROR("加密串中出现填充字符!");//填充字符与字符串中的某个字符相同
+		SetLastError(ErrorCode::FILL_CODE_IN_BASE_CODE);
+		THROW_ERROR(GetErrorReason(GetLastError()));
 		return;
 	}
 
 	//映射加密串
 	if (!MapTheBaseCode())
 	{
-		SetLastError(CIPHER_REPEATING_CHAR);
-		THROW_ERROR("加密串中出现重复字符!");
+		SetLastError(ErrorCode::BASE_CODE_REPEAT_CHAR);
+		THROW_ERROR(GetErrorReason(GetLastError()));
 		return;
 	}
 
@@ -149,19 +161,26 @@ Base64::Base64(PCUCHAR _ucBaseCode, UCHAR _ucFullCode) :
 }
 
 
-Base64::BOOL Base64::SetBaseCode(PCUCHAR pcucBaseCode) noexcept
+Base64::BOOL Base64::SetBaseCode(PCUCHAR pBaseCode) noexcept
 {
 	//设置该类为不可用状态
 	bAvailable = false;
 
+	//空串
+	if (pBaseCode == NULL)
+	{
+		SetLastError(ErrorCode::NULL_BASE_CODE);
+		return false;
+	}
+
 	//拷贝输入字符串
-	memcpy(ucBaseCode, pcucBaseCode, BASECODE_COUNT);
+	memcpy(ucBaseCode, pBaseCode, BASECODE_COUNT);
 	ucBaseCode[64] = '\0';//安全起见给字符串末尾赋值为0
 
 	//映射加密串
 	if (!MapTheBaseCode())
 	{
-		SetLastError(CIPHER_REPEATING_CHAR);
+		SetLastError(ErrorCode::BASE_CODE_REPEAT_CHAR);
 		return false;
 	}
 
@@ -176,17 +195,17 @@ Base64::PCUCHAR Base64::GetBaseCode(VOID) const noexcept
 }
 
 
-Base64::BOOL Base64::SetFullCode(UCHAR cucFullCode) noexcept
+Base64::BOOL Base64::SetFullCode(UCHAR cFullCode) noexcept
 {
 	//设置该类为不可用状态
 	bAvailable = false;
 	//设置填充字符
-	ucFullCode = cucFullCode;
+	ucFullCode = cFullCode;
 
 	//验证字符
 	if (strchr((PCCHAR)ucBaseCode, ucFullCode) != NULL)//返回非NULL代表填充字符在加密串中
 	{
-		SetLastError(FILL_CODE_IN_CIPHER);
+		SetLastError(ErrorCode::FILL_CODE_IN_BASE_CODE);
 		return false;
 	}
 
@@ -205,7 +224,7 @@ Base64::ULONGLONG Base64::GetEnCodeSize(PCVOID pData, ULONGLONG ullDataSize) con
 	return ullDataSize <= 3 ? 4 : (ullDataSize / 3 * 4 + ((ullDataSize % 3) ? 4 : 0));
 }
 
-Base64::BOOL Base64::EnCode(PCVOID pData, ULONGLONG ullDataSize, PUCHAR pCode, ULONGLONG ullCodeSize) noexcept
+Base64::BOOL Base64::EnCode(PCVOID pData, ULONGLONG ullDataSize, PUCHAR pCode, ULONGLONG ullCodeSize) const noexcept
 {
 	//类的状态为不可用
 	if (!bAvailable)
@@ -215,19 +234,19 @@ Base64::BOOL Base64::EnCode(PCVOID pData, ULONGLONG ullDataSize, PUCHAR pCode, U
 
 	if (pData == NULL || ullDataSize == 0)
 	{
-		SetLastError(NULL_DATA_POINTER);
+		SetLastError(ErrorCode::NULL_DATA_POINTER);
 		return false;
 	}
 
 	if (pCode == NULL || ullCodeSize == 0)
 	{
-		SetLastError(NULL_CODE_POINTER);
+		SetLastError(ErrorCode::NULL_CODE_POINTER);
 		return false;
 	}
 
 	if (GetEnCodeSize(pData, ullDataSize) > ullCodeSize)
 	{
-		SetLastError(TARGET_TOO_SMALL);
+		SetLastError(ErrorCode::TARGET_TOO_SMALL);
 		return false;
 	}
 
@@ -285,7 +304,7 @@ Base64::ULONGLONG Base64::GetDeCodeSize(PCUCHAR pCode, ULONGLONG ullCodeSize) co
 	return (ullCodeSize <= 4 ? 3 : ullCodeSize / 4 * 3) - ullFullCodeCount;
 }
 
-Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, ULONGLONG ullDataSize) noexcept
+Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, ULONGLONG ullDataSize) const noexcept
 {
 	//类的状态为不可用
 	if (!bAvailable)
@@ -295,25 +314,26 @@ Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, U
 
 	if (pCode == NULL || ullCodeSize == 0)
 	{
-		SetLastError(NULL_CODE_POINTER);
+		SetLastError(ErrorCode::NULL_CODE_POINTER);
 		return false;
 	}
 
 	if (pData == NULL || ullDataSize == 0)
 	{
-		SetLastError(NULL_DATA_POINTER);
+		SetLastError(ErrorCode::NULL_DATA_POINTER);
 		return false;
 	}
 
 	if (GetDeCodeSize(pCode, ullCodeSize) > ullDataSize)
 	{
-		SetLastError(TARGET_TOO_SMALL);
+		SetLastError(ErrorCode::TARGET_TOO_SMALL);
 		return false;
 	}
 
 	//不是4的倍数
 	if (ullCodeSize % 4 != 0)
 	{
+		SetLastError(ErrorCode::NOT_FOUR_MULTIPLE);
 		return false;
 	}
 
@@ -338,6 +358,7 @@ Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, U
 		{
 			if ((ucCode[k + 4] = ucBaseCodeMap[pCode[i + k]]) == BASECODE_COUNT)//该字符不在映射集中
 			{
+				SetLastError(ErrorCode::FIND_UNKNOW_CHAR);
 				return false;
 			}
 		}
@@ -356,6 +377,7 @@ Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, U
 			{
 				if ((ucCode[k + 4] = ucBaseCodeMap[pCode[i + k]]) == BASECODE_COUNT)//该字符不在映射集中
 				{
+					SetLastError(ErrorCode::FIND_UNKNOW_CHAR);
 					return false;
 				}
 			}
@@ -369,6 +391,7 @@ Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, U
 			{
 				if ((ucCode[k + 4] = ucBaseCodeMap[pCode[i + k]]) == BASECODE_COUNT)//该字符不在映射集中
 				{
+					SetLastError(ErrorCode::FIND_UNKNOW_CHAR);
 					return false;
 				}
 			}
@@ -384,25 +407,24 @@ Base64::BOOL Base64::DeCode(PCUCHAR pCode, ULONGLONG ullCodeSize, PVOID pData, U
 	return true;
 }
 
-
-Base64::VOID Base64::SetLastError(ULONG ulErrorCode) noexcept
+Base64::VOID Base64::SetLastError(ErrorCode ecErrorCode) const noexcept
 {
-	ulLastError = ulErrorCode;
+	ecLastError = ecErrorCode;
 }
 
-Base64::ULONG Base64::GetLastError(VOID) const noexcept
+Base64::ErrorCode Base64::GetLastError(VOID) const noexcept
 {
-	return ulLastError;
+	return ecLastError;
 }
 
-Base64::PCCHAR Base64::GetErrorReason(ULONG ulErrorCode) const noexcept
+Base64::PCCHAR Base64::GetErrorReason(ErrorCode ecErrorCode) const noexcept
 {
-	if (ulLastError >= UNKNOW_ERROR)
+	if (ecLastError >= ErrorCode::UNKNOW_ERROR)
 	{
-		return pErrorReason[UNKNOW_ERROR];
+		return pErrorReason[(ULONG)ErrorCode::UNKNOW_ERROR];
 	}
 
-	return pErrorReason[ulErrorCode];
+	return pErrorReason[(ULONG)ecErrorCode];
 }
 //***************funtion***************//
 
