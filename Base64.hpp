@@ -74,7 +74,7 @@ public:
 	~Base64(VOID) = default;
 
 	BOOL SetBaseCode(PCUCHAR pBaseCode) noexcept;//设置密码串
-	PCUCHAR GetBaseCode(VOID) const noexcept;//获密码串
+	PCUCHAR GetBaseCode(VOID) const noexcept;//获取密码串
 
 	BOOL SetFullCode(UCHAR cFullCode) noexcept;//设置填充字符
 	UCHAR GetFullCode(VOID) const noexcept;//获取填充字符
